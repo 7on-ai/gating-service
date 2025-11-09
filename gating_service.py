@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Complete Gating Service with Two-Channel + MCL
-FastAPI service for routing, valence classification, and moral context analysis
+✅ Fixed: Shared service but per-user database
 """
 
 from fastapi import FastAPI, HTTPException
@@ -12,7 +12,6 @@ from datetime import datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import json
-import os
 
 app = FastAPI(title="Gating Service")
 
@@ -30,11 +29,11 @@ PII_PATTERNS = {
 }
 
 RED_LINES = {
-    'violence': ['kill', 'murder', 'hurt', 'harm', 'attack', 'shoot', 'stab'],
-    'illegal': ['hack', 'steal', 'fraud', 'scam', 'counterfeit', 'rob'],
-    'hate': ['racist', 'sexist', 'homophobic', 'discriminate', 'slur'],
-    'manipulation': ['manipulate', 'gaslight', 'deceive', 'trick', 'exploit'],
-    'self_harm': ['suicide', 'kill myself', 'end my life', 'self-harm'],
+    'violence': ['kill', 'murder', 'hurt', 'harm', 'attack', 'shoot', 'stab', 'ฆ่า', 'ทำร้าย'],
+    'illegal': ['hack', 'steal', 'fraud', 'scam', 'counterfeit', 'rob', 'แฮก', 'ขโมย'],
+    'hate': ['racist', 'sexist', 'homophobic', 'discriminate', 'slur', 'เหยียด'],
+    'manipulation': ['manipulate', 'gaslight', 'deceive', 'trick', 'exploit', 'หลอกลวง'],
+    'self_harm': ['suicide', 'kill myself', 'end my life', 'self-harm', 'ฆ่าตัวตาย'],
 }
 
 MORAL_TAXONOMY = {
@@ -49,7 +48,7 @@ MORAL_TAXONOMY = {
 class GatingRequest(BaseModel):
     user_id: str
     text: str
-    database_url: str
+    database_url: str  # ✅ CRITICAL: ต้องส่งมาทุก request
     session_id: Optional[str] = None
     metadata: Optional[Dict] = {}
 
@@ -79,8 +78,8 @@ def check_red_lines(text: str) -> List[str]:
 def simple_valence_classifier(text: str) -> Dict[str, float]:
     text_lower = text.lower()
     
-    positive_words = ['ขอบคุณ', 'ดี', 'ช่วย', 'รัก', 'สุข', 'good', 'great', 'thank', 'love', 'help']
-    negative_words = ['เกลียด', 'แย่', 'เจ็บ', 'ทำร้าย', 'hate', 'bad', 'hurt', 'harm', 'kill']
+    positive_words = ['ขอบคุณ', 'ดี', 'ช่วย', 'รัก', 'สุข', 'good', 'great', 'thank', 'love', 'help', 'wonderful', 'excellent']
+    negative_words = ['เกลียด', 'แย่', 'เจ็บ', 'ทำร้าย', 'hate', 'bad', 'hurt', 'harm', 'kill', 'terrible', 'awful']
     
     pos_count = sum(1 for w in positive_words if w in text_lower)
     neg_count = sum(1 for w in negative_words if w in text_lower)
@@ -123,28 +122,30 @@ def detect_chain(user_id: str, session_id: str, db_conn) -> Optional[List[Dict]]
     
     cursor = db_conn.cursor(cursor_factory=RealDictCursor)
     
-    query = """
-    SELECT text, created_at
-    FROM user_data_schema.gating_logs
-    WHERE user_id = %s 
-      AND created_at > NOW() - INTERVAL '%s seconds'
-    ORDER BY created_at DESC
-    LIMIT 5
-    """
-    
-    cursor.execute(query, (user_id, CONFIG['mcl_chain_window']))
-    messages = cursor.fetchall()
-    cursor.close()
-    
-    if len(messages) < 2:
-        return None
-    
-    return [{'step': i+1, 'text': m['text'], 'timestamp': m['created_at'].isoformat()}
-            for i, m in enumerate(reversed(messages))]
+    try:
+        query = """
+        SELECT text, created_at
+        FROM user_data_schema.gating_logs
+        WHERE user_id = %s 
+          AND created_at > NOW() - INTERVAL '%s seconds'
+        ORDER BY created_at DESC
+        LIMIT 5
+        """
+        
+        cursor.execute(query, (user_id, CONFIG['mcl_chain_window']))
+        messages = cursor.fetchall()
+        
+        if len(messages) < 2:
+            return None
+        
+        return [{'step': i+1, 'text': m['text'], 'timestamp': m['created_at'].isoformat()}
+                for i, m in enumerate(reversed(messages))]
+    finally:
+        cursor.close()
 
 def infer_intention(chain: List[Dict]) -> float:
     last_text = chain[-1]['text'].lower()
-    positive_indicators = ['ช่วย', 'แม่', 'พ่อ', 'ครอบครัว', 'help', 'family', 'save']
+    positive_indicators = ['ช่วย', 'แม่', 'พ่อ', 'ครอบครัว', 'help', 'family', 'save', 'protect']
     
     score = 0.5
     for indicator in positive_indicators:
@@ -193,6 +194,12 @@ def generate_safe_counterfactual(text: str, shadow_tag: str) -> str:
 
 @app.post("/gating/route", response_model=GatingResponse)
 async def route_message(request: GatingRequest):
+    """
+    ✅ Fixed: ใช้ database_url ที่ส่งมาแต่ละ request
+    Shared service แต่แยก database per-user
+    """
+    
+    # ✅ เชื่อมต่อ DB ของ user นั้น ๆ
     db_conn = psycopg2.connect(request.database_url)
     
     try:
@@ -321,7 +328,7 @@ async def route_message(request: GatingRequest):
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    return {"status": "healthy", "service": "gating", "shared": True}
 
 if __name__ == "__main__":
     import uvicorn
