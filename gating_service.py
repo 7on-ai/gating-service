@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-🌍 Multilingual Ethical Growth Gating Service - FIXED VERSION
-✅ Now creates embeddings and stores in memory_embeddings table
+🌍 Multilingual Ethical Growth Gating Service - COMPLETE FIX
+✅ Creates embeddings and stores in memory_embeddings table
+✅ Links to interaction_memories properly
 """
 
 from fastapi import FastAPI, HTTPException
@@ -12,7 +13,12 @@ from datetime import datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import json
-import httpx  # ✅ NEW: For Ollama API calls
+import httpx
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Ethical Growth Gating Service")
 
@@ -20,14 +26,14 @@ app = FastAPI(title="Ethical Growth Gating Service")
 # OLLAMA CONFIGURATION
 # ============================================================
 
-OLLAMA_URL = "http://ollama.ollama.svc.cluster.local:11434"  # ✅ Internal Kubernetes service
+OLLAMA_URL = "http://ollama.ollama.svc.cluster.local:11434"
 EMBEDDING_MODEL = "nomic-embed-text"  # 768 dimensions
 
 # ============================================================
-# EMBEDDING GENERATION (NEW)
+# EMBEDDING GENERATION
 # ============================================================
 
-async def generate_embedding(text: str) -> List[float]:
+async def generate_embedding(text: str) -> Optional[List[float]]:
     """Generate embedding using Ollama nomic-embed-text"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -40,24 +46,24 @@ async def generate_embedding(text: str) -> List[float]:
             )
             
             if response.status_code != 200:
-                print(f"❌ Ollama error: {response.status_code}")
+                logger.error(f"Ollama error: {response.status_code}")
                 return None
             
             data = response.json()
             embedding = data.get("embedding")
             
             if not embedding or len(embedding) != 768:
-                print(f"❌ Invalid embedding dimension: {len(embedding) if embedding else 0}")
+                logger.error(f"Invalid embedding dimension: {len(embedding) if embedding else 0}")
                 return None
             
             return embedding
             
     except Exception as e:
-        print(f"❌ Embedding generation error: {e}")
+        logger.error(f"Embedding generation error: {e}")
         return None
 
 # ============================================================
-# MULTILINGUAL PATTERNS (Same as before)
+# MULTILINGUAL PATTERNS
 # ============================================================
 
 class MultilingualPatterns:
@@ -117,7 +123,7 @@ class MultilingualPatterns:
 PATTERNS = MultilingualPatterns()
 
 # ============================================================
-# HELPER FUNCTIONS (Same as before)
+# HELPER FUNCTIONS
 # ============================================================
 
 def detect_language(text: str) -> str:
@@ -302,14 +308,25 @@ async def save_memory_with_embedding(
     user_id: str, 
     text: str,
     embedding: List[float],
-    metadata: Dict,
+    classification: str,
+    lang: str,
+    growth_stage: int,
     db_conn
 ) -> str:
-    """✅ NEW: Save to memory_embeddings with vector"""
+    """✅ Save to memory_embeddings with vector and metadata"""
     cursor = db_conn.cursor()
     
     # Convert embedding to PostgreSQL vector format
     vector_str = f"[{','.join(map(str, embedding))}]"
+    
+    # ✅ Store classification in metadata
+    metadata = {
+        'classification': classification,
+        'language': lang,
+        'growth_stage': growth_stage,
+        'source': 'gating_service',
+        'created_at': datetime.now().isoformat()
+    }
     
     cursor.execute("""
         INSERT INTO user_data_schema.memory_embeddings
@@ -327,6 +344,7 @@ async def save_memory_with_embedding(
     db_conn.commit()
     cursor.close()
     
+    logger.info(f"✅ Memory saved with ID: {memory_id}")
     return str(memory_id)
 
 def save_interaction_memory(
@@ -337,9 +355,10 @@ def save_interaction_memory(
     moments: List[Dict],
     reflection_prompt: str,
     gentle_guidance: Optional[str],
-    memory_embedding_id: Optional[str],  # ✅ NEW: Link to memory_embeddings
+    memory_embedding_id: str,
     db_conn
 ):
+    """Save to interaction_memories with link to memory_embeddings"""
     cursor = db_conn.cursor()
     
     cursor.execute("""
@@ -364,6 +383,7 @@ def save_interaction_memory(
     
     db_conn.commit()
     cursor.close()
+    logger.info(f"✅ Interaction memory saved")
 
 def get_user_ethical_history(user_id: str, db_conn) -> Dict:
     cursor = db_conn.cursor(cursor_factory=RealDictCursor)
@@ -474,28 +494,35 @@ class GatingResponse(BaseModel):
     gentle_guidance: Optional[str] = None
     growth_opportunity: Optional[str] = None
     detected_language: Optional[str] = None
+    memory_id: Optional[str] = None
 
 # ============================================================
-# MAIN ENDPOINT - FIXED VERSION
+# MAIN ENDPOINT - COMPLETE FIX
 # ============================================================
 
 @app.post("/gating/ethical-route", response_model=GatingResponse)
 async def ethical_routing(request: GatingRequest):
+    """Process text through ethical growth framework"""
+    
+    logger.info(f"📝 Processing text for user {request.user_id}: {request.text[:50]}...")
+    
+    # Validate database_url
+    if not request.database_url:
+        raise HTTPException(status_code=400, detail="database_url is required")
+    
     db_conn = psycopg2.connect(request.database_url)
     
     try:
-        print(f"📝 Processing text for user {request.user_id}: {request.text[:50]}...")
-        
         # 1. Detect language
         lang = detect_language(request.text)
-        print(f"🌍 Detected language: {lang}")
+        logger.info(f"🌍 Detected language: {lang}")
         
         # 2. ✅ Generate embedding FIRST
-        print(f"🧠 Generating embedding...")
+        logger.info(f"🧠 Generating embedding...")
         embedding = await generate_embedding(request.text)
         
         if not embedding:
-            print("⚠️  Warning: Embedding generation failed, continuing without it")
+            logger.warning("⚠️  Embedding generation failed, continuing without it")
         
         # 3. Get user history
         user_history = get_user_ethical_history(request.user_id, db_conn)
@@ -519,19 +546,19 @@ async def ethical_routing(request: GatingRequest):
         # 9. ✅ Save to memory_embeddings FIRST (with embedding)
         memory_id = None
         if embedding:
-            print(f"💾 Saving to memory_embeddings...")
+            logger.info(f"💾 Saving to memory_embeddings...")
             memory_id = await save_memory_with_embedding(
                 request.user_id,
                 request.text,
                 embedding,
-                {
-                    'classification': classification,
-                    'language': lang,
-                    'growth_stage': growth_stage
-                },
+                classification,
+                lang,
+                growth_stage,
                 db_conn
             )
-            print(f"✅ Memory saved with ID: {memory_id}")
+        else:
+            logger.error("❌ Cannot save without embedding")
+            raise HTTPException(status_code=500, detail="Embedding generation failed")
         
         # 10. Save ethical profile
         save_ethical_profile(request.user_id, ethical_scores, growth_stage, db_conn)
@@ -545,11 +572,11 @@ async def ethical_routing(request: GatingRequest):
             moments,
             reflection_prompt,
             gentle_guidance,
-            memory_id,  # ✅ Link to memory_embeddings
+            memory_id,
             db_conn
         )
         
-        print(f"✅ Processing completed: {classification}")
+        logger.info(f"✅ Processing completed: {classification}")
         
         return GatingResponse(
             status='success',
@@ -564,22 +591,26 @@ async def ethical_routing(request: GatingRequest):
             reflection_prompt=reflection_prompt,
             gentle_guidance=gentle_guidance,
             growth_opportunity=f"Stage {growth_stage}/5",
-            detected_language=lang
+            detected_language=lang,
+            memory_id=memory_id
         )
         
     except Exception as e:
-        print(f"❌ Error: {e}")
+        logger.error(f"❌ Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db_conn.close()
 
 @app.get("/health")
 async def health():
+    """Health check endpoint"""
     return {
         "status": "healthy", 
         "service": "ethical_growth_gating",
+        "version": "2.0",
         "multilingual": True,
-        "embedding_model": EMBEDDING_MODEL
+        "embedding_model": EMBEDDING_MODEL,
+        "ollama_url": OLLAMA_URL
     }
 
 if __name__ == "__main__":
