@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-🌍 Multilingual Ethical Growth Gating Service - COMPLETE FIX
+🌍 Multilingual Ethical Growth Gating Service - LLM CLASSIFICATION
+✅ Uses Ollama LLM for intelligent classification
 ✅ Creates embeddings and stores in memory_embeddings table
-✅ Links to interaction_memories properly
 """
 
 from fastapi import FastAPI, HTTPException
@@ -29,6 +29,169 @@ app = FastAPI(title="Ethical Growth Gating Service")
 
 OLLAMA_URL = os.getenv("OLLAMA_EXTERNAL_URL", "http://ollama.ollama.svc.cluster.local:11434")
 EMBEDDING_MODEL = "nomic-embed-text"  # 768 dimensions
+LLM_MODEL = "tinyllama"  # For classification
+
+# ============================================================
+# LLM-BASED CLASSIFICATION (NEW!)
+# ============================================================
+
+async def classify_with_llm(text: str, lang: str) -> Dict:
+    """Use Ollama LLM to classify memory with ethical analysis"""
+    
+    # Build multilingual prompt
+    prompts = {
+        'en': f"""You are an ethical growth analyst. Analyze this text and respond ONLY with valid JSON.
+
+Text: "{text}"
+
+Classify into ONE category and provide ethical scores (0.0-1.0):
+
+Categories:
+- growth_memory: Positive learning, gratitude, spiritual growth, faith, love
+- challenge_memory: Negative emotions, aggression, conflict, anger
+- wisdom_moment: Deep reflection, philosophical insights, breakthrough
+- needs_support: Crisis, despair, self-harm thoughts, severe distress
+- neutral_interaction: Everyday conversation, factual statements
+
+JSON format (respond with ONLY this, no other text):
+{{
+  "classification": "category_name",
+  "self_awareness": 0.0-1.0,
+  "emotional_regulation": 0.0-1.0,
+  "compassion": 0.0-1.0,
+  "integrity": 0.0-1.0,
+  "growth_mindset": 0.0-1.0,
+  "wisdom": 0.0-1.0,
+  "transcendence": 0.0-1.0,
+  "reasoning": "brief explanation"
+}}""",
+        
+        'th': f"""คุณคือนักวิเคราะห์การเติบโตทางจริยธรรม วิเคราะห์ข้อความนี้และตอบเป็น JSON เท่านั้น
+
+ข้อความ: "{text}"
+
+จัดประเภทเป็น 1 ประเภท:
+- growth_memory: การเรียนรู้เชิงบวก ความกตัญญู การเติบโตทางจิตวิญญาณ
+- challenge_memory: อารมณ์เชิงลบ ความก้าวร้าว ความขัดแย้ง
+- wisdom_moment: การไตร่ตรองลึกซึ้ง ปัญญา
+- needs_support: วิกฤต ความสิ้นหวัง ต้องการความช่วยเหลือ
+- neutral_interaction: การสนทนาทั่วไป
+
+JSON format:
+{{
+  "classification": "ชื่อประเภท",
+  "self_awareness": 0.0-1.0,
+  "emotional_regulation": 0.0-1.0,
+  "compassion": 0.0-1.0,
+  "integrity": 0.0-1.0,
+  "growth_mindset": 0.0-1.0,
+  "wisdom": 0.0-1.0,
+  "transcendence": 0.0-1.0,
+  "reasoning": "คำอธิบายสั้นๆ"
+}}"""
+    }
+    
+    prompt = prompts.get(lang, prompts['en'])
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{OLLAMA_URL}/api/generate",
+                json={
+                    "model": LLM_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.3,  # Lower = more consistent
+                        "top_p": 0.9,
+                    }
+                }
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"LLM classification error: {response.status_code}")
+                return get_fallback_classification(text)
+            
+            data = response.json()
+            llm_response = data.get("response", "")
+            
+            # Extract JSON from response
+            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', llm_response)
+            if json_match:
+                result = json.loads(json_match.group())
+                
+                # Validate classification
+                valid_classifications = [
+                    'growth_memory', 'challenge_memory', 'wisdom_moment', 
+                    'needs_support', 'neutral_interaction'
+                ]
+                
+                if result.get('classification') not in valid_classifications:
+                    result['classification'] = 'neutral_interaction'
+                
+                # Ensure all scores are present and valid
+                for key in ['self_awareness', 'emotional_regulation', 'compassion', 
+                           'integrity', 'growth_mindset', 'wisdom', 'transcendence']:
+                    if key not in result or not isinstance(result[key], (int, float)):
+                        result[key] = 0.5
+                    result[key] = max(0.0, min(1.0, float(result[key])))
+                
+                logger.info(f"✅ LLM classified as: {result['classification']}")
+                return result
+            else:
+                logger.warning("⚠️ Could not parse LLM JSON response")
+                return get_fallback_classification(text)
+                
+    except Exception as e:
+        logger.error(f"❌ LLM classification error: {e}")
+        return get_fallback_classification(text)
+
+def get_fallback_classification(text: str) -> Dict:
+    """Fallback to simple rule-based classification"""
+    text_lower = text.lower()
+    
+    # Crisis detection
+    crisis_words = ['kill', 'die', 'suicide', 'end it', 'hopeless', 'worthless']
+    if any(word in text_lower for word in crisis_words):
+        return {
+            'classification': 'challenge_memory',
+            'self_awareness': 0.3,
+            'emotional_regulation': 0.2,
+            'compassion': 0.4,
+            'integrity': 0.4,
+            'growth_mindset': 0.3,
+            'wisdom': 0.3,
+            'transcendence': 0.2,
+            'reasoning': 'Fallback: detected challenging content'
+        }
+    
+    # Growth detection
+    growth_words = ['learn', 'improve', 'grow', 'thank', 'grateful', 'love', 'god', 'buddha']
+    if any(word in text_lower for word in growth_words):
+        return {
+            'classification': 'growth_memory',
+            'self_awareness': 0.6,
+            'emotional_regulation': 0.6,
+            'compassion': 0.7,
+            'integrity': 0.6,
+            'growth_mindset': 0.7,
+            'wisdom': 0.6,
+            'transcendence': 0.5,
+            'reasoning': 'Fallback: detected growth-oriented content'
+        }
+    
+    # Default neutral
+    return {
+        'classification': 'neutral_interaction',
+        'self_awareness': 0.5,
+        'emotional_regulation': 0.5,
+        'compassion': 0.5,
+        'integrity': 0.5,
+        'growth_mindset': 0.5,
+        'wisdom': 0.5,
+        'transcendence': 0.3,
+        'reasoning': 'Fallback: neutral classification'
+    }
 
 # ============================================================
 # EMBEDDING GENERATION
@@ -64,66 +227,6 @@ async def generate_embedding(text: str) -> Optional[List[float]]:
         return None
 
 # ============================================================
-# MULTILINGUAL PATTERNS
-# ============================================================
-
-class MultilingualPatterns:
-    """Language-agnostic patterns using sentiment and semantic markers"""
-    
-    SELF_REFLECTION = {
-        'en': ['why', 'because', 'should i', 'is it right', 'wonder if', 'thinking about'],
-        'th': ['ทำไม', 'เพราะอะไร', 'ควรไหม', 'ถูกหรือเปล่า', 'สงสัย', 'คิดว่า'],
-        'zh': ['为什么', '因为', '应该', '是否', '想知道', '思考'],
-        'ja': ['なぜ', 'どうして', 'すべき', '正しい', '考える', '思う'],
-        'ko': ['왜', '때문에', '해야', '옳은', '생각', '궁금'],
-        'universal': ['?', '...', '🤔']
-    }
-    
-    EMPATHY = {
-        'en': ['they feel', 'if i were', 'understand feeling', 'their perspective'],
-        'th': ['เขารู้สึกยังไง', 'ถ้าเป็นเขา', 'เข้าใจความรู้สึก', 'มุมมองเขา'],
-        'zh': ['他们感觉', '如果我是', '理解感受', '他们的角度'],
-        'universal': ['❤️', '🫂', '💝']
-    }
-    
-    ACCOUNTABILITY = {
-        'en': ['my fault', 'responsible', 'apologize', 'fix', 'my mistake'],
-        'th': ['ผิดของฉัน', 'รับผิดชอบ', 'ขอโทษ', 'แก้ไข', 'ความผิดพลาด'],
-        'zh': ['我的错', '负责', '道歉', '改正', '我的错误'],
-        'universal': ['🙏', '🙇']
-    }
-    
-    GRATITUDE = {
-        'en': ['thank', 'grateful', 'appreciate', 'lucky', 'blessed'],
-        'th': ['ขอบคุณ', 'ขอบใจ', 'ดีใจที่มี', 'โชคดีที่', 'มีความสุข'],
-        'zh': ['谢谢', '感激', '感谢', '幸运', '感恩'],
-        'universal': ['🙏', '❤️', '😊', '💖']
-    }
-    
-    GROWTH_SEEKING = {
-        'en': ['learn', 'improve', 'develop', 'change', 'grow', 'better'],
-        'th': ['เรียนรู้', 'พัฒนา', 'ทำให้ดีขึ้น', 'เปลี่ยนแปลง', 'เติบโต'],
-        'zh': ['学习', '改进', '发展', '改变', '成长', '更好'],
-        'universal': ['📚', '🌱', '💪', '⬆️']
-    }
-    
-    AGGRESSION = {
-        'en': ['kill', 'hurt', 'harm', 'attack', 'destroy', 'hate'],
-        'th': ['ฆ่า', 'ทำร้าย', 'เจ็บ', 'โจมตี', 'ทำลาย', 'เกลียด'],
-        'zh': ['杀', '伤害', '攻击', '破坏', '恨'],
-        'universal': ['🔪', '💀', '😡', '🤬']
-    }
-    
-    DESPAIR = {
-        'en': ['want to die', 'meaningless', 'worthless', 'hopeless', 'end it'],
-        'th': ['อยากตาย', 'ไม่มีความหมาย', 'ไร้ค่า', 'สิ้นหวัง', 'จบชีวิต'],
-        'zh': ['想死', '无意义', '无价值', '绝望', '结束'],
-        'universal': ['💔', '😭', '🖤']
-    }
-
-PATTERNS = MultilingualPatterns()
-
-# ============================================================
 # HELPER FUNCTIONS
 # ============================================================
 
@@ -140,105 +243,49 @@ def detect_language(text: str) -> str:
     else:
         return 'en'
 
-def score_pattern_multilingual(text: str, pattern_dict: Dict, lang: str = None) -> float:
-    if not lang:
-        lang = detect_language(text)
-    
-    text_lower = text.lower()
-    patterns = pattern_dict.get(lang, []) + pattern_dict.get('universal', [])
-    
-    if not patterns:
-        patterns = pattern_dict.get('en', []) + pattern_dict.get('universal', [])
-    
-    matches = sum(1 for pattern in patterns if pattern in text_lower)
-    return min(matches / max(len(patterns) * 0.3, 1), 1.0)
-
-def analyze_ethical_dimensions_multilingual(text: str, user_history: Dict) -> Dict[str, float]:
-    lang = detect_language(text)
-    scores = {}
-    
-    self_aware_score = score_pattern_multilingual(text, PATTERNS.SELF_REFLECTION, lang)
-    scores['self_awareness'] = min(1.0, 
-        self_aware_score * 0.7 + user_history.get('baseline_self_awareness', 0.3)
-    )
-    
-    aggression_score = score_pattern_multilingual(text, PATTERNS.AGGRESSION, lang)
-    scores['emotional_regulation'] = max(0.0, min(1.0,
-        (1.0 - aggression_score) * 0.7 + user_history.get('baseline_regulation', 0.4)
-    ))
-    
-    empathy_score = score_pattern_multilingual(text, PATTERNS.EMPATHY, lang)
-    scores['compassion'] = min(1.0,
-        empathy_score * 0.7 + user_history.get('baseline_compassion', 0.4)
-    )
-    
-    accountability_score = score_pattern_multilingual(text, PATTERNS.ACCOUNTABILITY, lang)
-    scores['integrity'] = min(1.0,
-        accountability_score * 0.7 + user_history.get('baseline_integrity', 0.5)
-    )
-    
-    growth_score = score_pattern_multilingual(text, PATTERNS.GROWTH_SEEKING, lang)
-    scores['growth_mindset'] = min(1.0,
-        growth_score * 0.7 + user_history.get('baseline_growth', 0.4)
-    )
-    
-    wisdom_score = (self_aware_score + empathy_score) / 2
-    scores['wisdom'] = min(1.0,
-        wisdom_score * 0.6 + user_history.get('baseline_wisdom', 0.3)
-    )
-    
-    gratitude_score = score_pattern_multilingual(text, PATTERNS.GRATITUDE, lang)
-    transcendent_score = (gratitude_score + growth_score) / 2
-    scores['transcendence'] = min(1.0,
-        transcendent_score * 0.5 + user_history.get('baseline_transcendence', 0.2)
-    )
-    
-    return scores
-
-def detect_moments_multilingual(text: str, ethical_scores: Dict) -> List[Dict]:
-    lang = detect_language(text)
+def detect_moments(ethical_scores: Dict, classification: str) -> List[Dict]:
+    """Detect significant moments based on scores and classification"""
     moments = []
     
-    reflection_score = score_pattern_multilingual(text, PATTERNS.SELF_REFLECTION, lang)
-    if reflection_score > 0.6:
+    if ethical_scores.get('self_awareness', 0) > 0.7:
         moments.append({
             'type': 'breakthrough',
             'severity': 'positive',
-            'description': 'User shows self-reflection',
+            'description': 'High self-awareness detected',
             'timestamp': datetime.now().isoformat()
         })
     
-    if ethical_scores.get('emotional_regulation', 0.5) < 0.3:
+    if ethical_scores.get('emotional_regulation', 0) < 0.3:
         moments.append({
             'type': 'struggle',
             'severity': 'neutral',
-            'description': 'User experiencing difficulty',
+            'description': 'Emotional difficulty detected',
             'timestamp': datetime.now().isoformat()
         })
     
-    despair_score = score_pattern_multilingual(text, PATTERNS.DESPAIR, lang)
-    if despair_score > 0.5:
+    if classification == 'needs_support':
         moments.append({
             'type': 'crisis',
             'severity': 'critical',
-            'description': 'User in emotional crisis',
+            'description': 'User needs support',
             'timestamp': datetime.now().isoformat(),
             'requires_intervention': True
         })
     
-    growth_score = score_pattern_multilingual(text, PATTERNS.GROWTH_SEEKING, lang)
-    if growth_score > 0.6:
+    if classification in ['growth_memory', 'wisdom_moment']:
         moments.append({
             'type': 'growth',
             'severity': 'positive',
-            'description': 'User showing growth mindset',
+            'description': 'Growth or wisdom detected',
             'timestamp': datetime.now().isoformat()
         })
     
     return moments
 
 def determine_growth_stage(ethical_scores: Dict[str, float]) -> int:
+    """Determine growth stage from ethical scores"""
     avg_score = sum(ethical_scores.values()) / len(ethical_scores)
+    
     if avg_score < 0.3:
         return 1
     elif avg_score < 0.5:
@@ -250,24 +297,8 @@ def determine_growth_stage(ethical_scores: Dict[str, float]) -> int:
     else:
         return 5
 
-def classify_for_learning(text: str, ethical_scores: Dict, moments: List[Dict], stage: int) -> str:
-    if any(m.get('severity') == 'critical' for m in moments):
-        return 'needs_support'
-    
-    growth_moments = [m for m in moments if m.get('type') == 'growth']
-    if growth_moments or sum(ethical_scores.values()) / len(ethical_scores) > 0.7:
-        return 'growth_memory'
-    
-    if any(m.get('type') == 'breakthrough' for m in moments):
-        return 'wisdom_moment'
-    
-    if any(m.get('type') == 'struggle' for m in moments):
-        return 'challenge_memory'
-    
-    return 'neutral_interaction'
-
 # ============================================================
-# DATABASE OPERATIONS - FIXED VERSION
+# DATABASE OPERATIONS
 # ============================================================
 
 def save_ethical_profile(user_id: str, ethical_scores: Dict, stage: int, db_conn):
@@ -314,13 +345,11 @@ async def save_memory_with_embedding(
     growth_stage: int,
     db_conn
 ) -> str:
-    """✅ Save to memory_embeddings with vector and metadata"""
+    """Save to memory_embeddings with vector and metadata"""
     cursor = db_conn.cursor()
     
-    # Convert embedding to PostgreSQL vector format
     vector_str = f"[{','.join(map(str, embedding))}]"
     
-    # ✅ Store classification in metadata
     metadata = {
         'classification': classification,
         'language': lang,
@@ -428,12 +457,10 @@ GUIDANCE_TEMPLATES = {
     'crisis': {
         'en': "I'm concerned about you. Please reach out to a mental health professional.",
         'th': "ฉันเป็นห่วงคุณมาก โปรดติดต่อสายด่วนสุขภาพจิต 1323",
-        'zh': "我很担心你。请联系心理健康专业人士。",
     },
     'emotional_dysregulation': {
         'en': "Take a deep breath. These feelings will pass.",
         'th': "ลองหายใจเข้าลึกๆ ความรู้สึกนี้จะผ่านไป",
-        'zh': "深呼吸。这些感觉会过去的。",
     },
 }
 
@@ -441,37 +468,29 @@ REFLECTION_PROMPTS = {
     1: {
         'en': "What are you feeling right now?",
         'th': "สิ่งที่คุณกำลังรู้สึกตอนนี้คืออะไร?",
-        'zh': "你现在感觉如何？",
     },
     2: {
         'en': "If someone else were in this situation, how would they feel?",
         'th': "ถ้าคนอื่นอยู่ในสถานการณ์นี้ เขาจะรู้สึกยังไง?",
-        'zh': "如果其他人处于这种情况，他们会有什么感受？",
     },
     3: {
         'en': "What values does this decision reflect?",
         'th': "การตัดสินใจนี้สะท้อนคุณค่าอะไร?",
-        'zh': "这个决定反映了什么价值观？",
     },
 }
 
-def get_guidance_multilingual(template_key: str, lang: str) -> str:
-    templates = GUIDANCE_TEMPLATES.get(template_key, {})
-    return templates.get(lang, templates.get('en', ''))
-
-def get_reflection_prompt_multilingual(stage: int, lang: str) -> str:
-    prompts = REFLECTION_PROMPTS.get(stage, REFLECTION_PROMPTS[2])
-    return prompts.get(lang, prompts.get('en', ''))
-
-def create_gentle_guidance_multilingual(moments: List[Dict], ethical_scores: Dict, lang: str) -> Optional[str]:
-    crisis_moments = [m for m in moments if m.get('severity') == 'critical']
-    if crisis_moments:
-        return get_guidance_multilingual('crisis', lang)
+def get_guidance(classification: str, ethical_scores: Dict, lang: str) -> Optional[str]:
+    if classification == 'needs_support':
+        return GUIDANCE_TEMPLATES['crisis'].get(lang, GUIDANCE_TEMPLATES['crisis']['en'])
     
     if ethical_scores.get('emotional_regulation', 0.5) < 0.3:
-        return get_guidance_multilingual('emotional_dysregulation', lang)
+        return GUIDANCE_TEMPLATES['emotional_dysregulation'].get(lang, GUIDANCE_TEMPLATES['emotional_dysregulation']['en'])
     
     return None
+
+def get_reflection_prompt(stage: int, lang: str) -> str:
+    prompts = REFLECTION_PROMPTS.get(stage, REFLECTION_PROMPTS[2])
+    return prompts.get(lang, prompts.get('en', ''))
 
 # ============================================================
 # API MODELS
@@ -498,16 +517,15 @@ class GatingResponse(BaseModel):
     memory_id: Optional[str] = None
 
 # ============================================================
-# MAIN ENDPOINT - COMPLETE FIX
+# MAIN ENDPOINT - LLM CLASSIFICATION
 # ============================================================
 
 @app.post("/gating/ethical-route", response_model=GatingResponse)
 async def ethical_routing(request: GatingRequest):
-    """Process text through ethical growth framework"""
+    """Process text through ethical growth framework with LLM classification"""
     
     logger.info(f"📝 Processing text for user {request.user_id}: {request.text[:50]}...")
     
-    # Validate database_url
     if not request.database_url:
         raise HTTPException(status_code=400, detail="database_url is required")
     
@@ -518,33 +536,42 @@ async def ethical_routing(request: GatingRequest):
         lang = detect_language(request.text)
         logger.info(f"🌍 Detected language: {lang}")
         
-        # 2. ✅ Generate embedding FIRST
+        # 2. Generate embedding
         logger.info(f"🧠 Generating embedding...")
         embedding = await generate_embedding(request.text)
         
         if not embedding:
-            logger.warning("⚠️  Embedding generation failed, continuing without it")
+            logger.warning("⚠️  Embedding generation failed")
         
-        # 3. Get user history
-        user_history = get_user_ethical_history(request.user_id, db_conn)
+        # 3. ✅ LLM CLASSIFICATION (NEW!)
+        logger.info(f"🤖 Using LLM for classification...")
+        llm_result = await classify_with_llm(request.text, lang)
         
-        # 4. Analyze ethical dimensions
-        ethical_scores = analyze_ethical_dimensions_multilingual(request.text, user_history)
+        classification = llm_result['classification']
+        ethical_scores = {
+            'self_awareness': llm_result['self_awareness'],
+            'emotional_regulation': llm_result['emotional_regulation'],
+            'compassion': llm_result['compassion'],
+            'integrity': llm_result['integrity'],
+            'growth_mindset': llm_result['growth_mindset'],
+            'wisdom': llm_result['wisdom'],
+            'transcendence': llm_result['transcendence'],
+        }
         
-        # 5. Determine growth stage
+        logger.info(f"✅ LLM Classification: {classification}")
+        logger.info(f"📊 Reasoning: {llm_result.get('reasoning', 'N/A')}")
+        
+        # 4. Determine growth stage
         growth_stage = determine_growth_stage(ethical_scores)
         
-        # 6. Detect moments
-        moments = detect_moments_multilingual(request.text, ethical_scores)
+        # 5. Detect moments
+        moments = detect_moments(ethical_scores, classification)
         
-        # 7. Generate guidance
-        reflection_prompt = get_reflection_prompt_multilingual(growth_stage, lang)
-        gentle_guidance = create_gentle_guidance_multilingual(moments, ethical_scores, lang)
+        # 6. Generate guidance
+        reflection_prompt = get_reflection_prompt(growth_stage, lang)
+        gentle_guidance = get_guidance(classification, ethical_scores, lang)
         
-        # 8. Classify
-        classification = classify_for_learning(request.text, ethical_scores, moments, growth_stage)
-        
-        # 9. ✅ Save to memory_embeddings FIRST (with embedding)
+        # 7. Save to memory_embeddings
         memory_id = None
         if embedding:
             logger.info(f"💾 Saving to memory_embeddings...")
@@ -561,10 +588,10 @@ async def ethical_routing(request: GatingRequest):
             logger.error("❌ Cannot save without embedding")
             raise HTTPException(status_code=500, detail="Embedding generation failed")
         
-        # 10. Save ethical profile
+        # 8. Save ethical profile
         save_ethical_profile(request.user_id, ethical_scores, growth_stage, db_conn)
         
-        # 11. Save interaction memory (linked to memory_embeddings)
+        # 9. Save interaction memory
         save_interaction_memory(
             request.user_id,
             request.text,
@@ -587,7 +614,8 @@ async def ethical_routing(request: GatingRequest):
             moments=moments,
             insights={
                 'strongest_dimension': max(ethical_scores, key=ethical_scores.get),
-                'growth_area': min(ethical_scores, key=ethical_scores.get)
+                'growth_area': min(ethical_scores, key=ethical_scores.get),
+                'llm_reasoning': llm_result.get('reasoning', 'N/A')
             },
             reflection_prompt=reflection_prompt,
             gentle_guidance=gentle_guidance,
@@ -608,12 +636,14 @@ async def health():
     return {
         "status": "healthy", 
         "service": "ethical_growth_gating",
-        "version": "2.0",
+        "version": "3.0-llm",
         "multilingual": True,
         "embedding_model": EMBEDDING_MODEL,
+        "classification_model": LLM_MODEL,
         "ollama_url": OLLAMA_URL
     }
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)
+    
