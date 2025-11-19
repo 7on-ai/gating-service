@@ -15,6 +15,7 @@ from psycopg2.extras import RealDictCursor
 import json
 import httpx
 import logging
+import os
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +27,7 @@ app = FastAPI(title="Ethical Growth Gating Service")
 # OLLAMA CONFIGURATION
 # ============================================================
 
-OLLAMA_URL = "http://ollama.ollama.svc.cluster.local:11434"
+OLLAMA_URL = os.getenv("OLLAMA_EXTERNAL_URL", "http://ollama.ollama.svc.cluster.local:11434")
 EMBEDDING_MODEL = "nomic-embed-text"  # 768 dimensions
 
 # ============================================================
