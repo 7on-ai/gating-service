@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-🌍 Multilingual Ethical Growth Gating Service - LLM CLASSIFICATION
-✅ Uses Ollama LLM for intelligent classification
-✅ Creates embeddings and stores in memory_embeddings table
+🌍 Multilingual Ethical Growth Gating Service - IMPROVED THAI SUPPORT v2
+✅ Better Thai keyword detection
+✅ Enhanced LLM prompts for Thai language
 """
 
 from fastapi import FastAPI, HTTPException
@@ -32,28 +32,70 @@ EMBEDDING_MODEL = "nomic-embed-text"  # 768 dimensions
 LLM_MODEL = "tinyllama"  # For classification
 
 # ============================================================
-# LLM-BASED CLASSIFICATION (NEW!)
+# IMPROVED MULTILINGUAL CLASSIFICATION
 # ============================================================
 
 async def classify_with_llm(text: str, lang: str) -> Dict:
-    """Use Ollama LLM to classify memory with ethical analysis"""
+    """Use Ollama LLM to classify memory with BETTER multilingual support"""
     
-    # Build multilingual prompt
-    prompts = {
-        'en': f"""You are an ethical growth analyst. Analyze this text and respond ONLY with valid JSON.
+    # ✅ IMPROVED: Better Thai examples in prompt
+    if lang == 'th':
+        prompt = f"""คุณเป็นผู้เชี่ยวชาญด้านการเติบโตทางจริยธรรม วิเคราะห์ข้อความภาษาไทยนี้และตอบเป็น JSON เท่านั้น
+
+ข้อความ: "{text}"
+
+จัดหมวดหมู่เป็น 1 ประเภท:
+
+หมวดหมู่:
+- growth_memory: ความรู้สึกเชิงบวก ความกตัญญู การเรียนรู้ ความรัก ความเชื่อทางศาสนา (พระพุทธเจ้า พระเจ้า อัลลอฮ์) การสวดมนต์ ทำบุญ ความซาบซึ้งในธรรมชาติ
+- challenge_memory: อารมณ์เชิงลบ ความก้าวร้าว ความรุนแรง ความโกรธ ความเกลียดชัง
+- wisdom_moment: การไตร่ตรองลึกซึ้ง ข้อคิดทางปรัชญา การตรัสรู้ สติปัญญา
+- needs_support: วิกฤต ความสิ้นหวัง ความทุกข์ระดับรุนแรง ต้องการความช่วยเหลือ
+- neutral_interaction: การสนทนาทั่วไป ข้อเท็จจริง ข้อมูลเฉยๆ
+
+ตัวอย่าง:
+- "ฉันรักพระพุทธเจ้า" = growth_memory (ศาสนา/ความรัก)
+- "ขอบคุณพระเจ้า" = growth_memory (ความกตัญญู/ศาสนา)
+- "ต้นไม้สวยงามมาก" = growth_memory (ธรรมชาติ)
+- "ฉันเกลียดเขา" = challenge_memory (ความโกรธ)
+- "ชีวิตไม่มีความหมาย" = needs_support (วิกฤต)
+
+ตอบเป็น JSON เท่านั้น (ไม่ต้องมี markdown):
+{{
+  "classification": "ชื่อประเภท",
+  "self_awareness": 0.0-1.0,
+  "emotional_regulation": 0.0-1.0,
+  "compassion": 0.0-1.0,
+  "integrity": 0.0-1.0,
+  "growth_mindset": 0.0-1.0,
+  "wisdom": 0.0-1.0,
+  "transcendence": 0.0-1.0,
+  "reasoning": "คำอธิบายสั้นๆ ภาษาไทย"
+}}"""
+    else:
+        # English and other languages
+        prompt = f"""You are an ethical growth analyst. Analyze this text and respond ONLY with valid JSON.
 
 Text: "{text}"
+Language: {lang.upper()}
 
-Classify into ONE category and provide ethical scores (0.0-1.0):
+Classify into ONE category. Consider cultural context:
 
 Categories:
-- growth_memory: Positive learning, gratitude, spiritual growth, faith, love
-- challenge_memory: Negative emotions, aggression, conflict, anger
-- wisdom_moment: Deep reflection, philosophical insights, breakthrough
-- needs_support: Crisis, despair, self-harm thoughts, severe distress
-- neutral_interaction: Everyday conversation, factual statements
+- growth_memory: Positive emotions, gratitude, spiritual/religious growth (God, Buddha, Allah, Jesus), faith, love, learning, appreciation, nature appreciation, kindness
+- challenge_memory: Negative emotions, aggression, violence, anger, conflict, harm, hatred
+- wisdom_moment: Deep philosophical reflection, insights, enlightenment, meditation, contemplation
+- needs_support: Crisis, despair, self-harm thoughts, severe distress, hopelessness
+- neutral_interaction: Everyday conversation, neutral statements, factual information
 
-JSON format (respond with ONLY this, no other text):
+Examples:
+- "I love God" = growth_memory (religious/love)
+- "Thank you Buddha" = growth_memory (gratitude/religious)
+- "Beautiful tree" = growth_memory (nature)
+- "I hate them" = challenge_memory (anger)
+- "Life is meaningless" = needs_support (crisis)
+
+Respond with ONLY this JSON (no markdown, no explanation):
 {{
   "classification": "category_name",
   "self_awareness": 0.0-1.0,
@@ -64,34 +106,7 @@ JSON format (respond with ONLY this, no other text):
   "wisdom": 0.0-1.0,
   "transcendence": 0.0-1.0,
   "reasoning": "brief explanation"
-}}""",
-        
-        'th': f"""คุณคือนักวิเคราะห์การเติบโตทางจริยธรรม วิเคราะห์ข้อความนี้และตอบเป็น JSON เท่านั้น
-
-ข้อความ: "{text}"
-
-จัดประเภทเป็น 1 ประเภท:
-- growth_memory: การเรียนรู้เชิงบวก ความกตัญญู การเติบโตทางจิตวิญญาณ
-- challenge_memory: อารมณ์เชิงลบ ความก้าวร้าว ความขัดแย้ง
-- wisdom_moment: การไตร่ตรองลึกซึ้ง ปัญญา
-- needs_support: วิกฤต ความสิ้นหวัง ต้องการความช่วยเหลือ
-- neutral_interaction: การสนทนาทั่วไป
-
-JSON format:
-{{
-  "classification": "ชื่อประเภท",
-  "self_awareness": 0.0-1.0,
-  "emotional_regulation": 0.0-1.0,
-  "compassion": 0.0-1.0,
-  "integrity": 0.0-1.0,
-  "growth_mindset": 0.0-1.0,
-  "wisdom": 0.0-1.0,
-  "transcendence": 0.0-1.0,
-  "reasoning": "คำอธิบายสั้นๆ"
 }}"""
-    }
-    
-    prompt = prompts.get(lang, prompts['en'])
     
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -102,7 +117,7 @@ JSON format:
                     "prompt": prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.3,  # Lower = more consistent
+                        "temperature": 0.2,  # Lower for more consistent classification
                         "top_p": 0.9,
                     }
                 }
@@ -110,10 +125,12 @@ JSON format:
             
             if response.status_code != 200:
                 logger.error(f"LLM classification error: {response.status_code}")
-                return get_fallback_classification(text)
+                return get_fallback_classification(text, lang)
             
             data = response.json()
             llm_response = data.get("response", "")
+            
+            logger.info(f"🤖 LLM raw response: {llm_response[:200]}")
             
             # Extract JSON from response
             json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', llm_response)
@@ -127,6 +144,7 @@ JSON format:
                 ]
                 
                 if result.get('classification') not in valid_classifications:
+                    logger.warning(f"⚠️ Invalid classification: {result.get('classification')}")
                     result['classification'] = 'neutral_interaction'
                 
                 # Ensure all scores are present and valid
@@ -136,51 +154,181 @@ JSON format:
                         result[key] = 0.5
                     result[key] = max(0.0, min(1.0, float(result[key])))
                 
-                logger.info(f"✅ LLM classified as: {result['classification']}")
+                logger.info(f"✅ LLM classified as: {result['classification']} (lang: {lang})")
                 return result
             else:
                 logger.warning("⚠️ Could not parse LLM JSON response")
-                return get_fallback_classification(text)
+                return get_fallback_classification(text, lang)
                 
     except Exception as e:
         logger.error(f"❌ LLM classification error: {e}")
-        return get_fallback_classification(text)
+        return get_fallback_classification(text, lang)
 
-def get_fallback_classification(text: str) -> Dict:
-    """Fallback to simple rule-based classification"""
+def get_fallback_classification(text: str, lang: str) -> Dict:
+    """✅ IMPROVED: Better Thai keyword detection"""
     text_lower = text.lower()
     
-    # Crisis detection
-    crisis_words = ['kill', 'die', 'suicide', 'end it', 'hopeless', 'worthless']
-    if any(word in text_lower for word in crisis_words):
-        return {
-            'classification': 'challenge_memory',
-            'self_awareness': 0.3,
-            'emotional_regulation': 0.2,
-            'compassion': 0.4,
-            'integrity': 0.4,
-            'growth_mindset': 0.3,
-            'wisdom': 0.3,
-            'transcendence': 0.2,
-            'reasoning': 'Fallback: detected challenging content'
-        }
+    logger.info(f"🔍 Fallback classification for: {text[:50]} (lang: {lang})")
     
-    # Growth detection
-    growth_words = ['learn', 'improve', 'grow', 'thank', 'grateful', 'love', 'god', 'buddha']
-    if any(word in text_lower for word in growth_words):
-        return {
-            'classification': 'growth_memory',
-            'self_awareness': 0.6,
-            'emotional_regulation': 0.6,
-            'compassion': 0.7,
-            'integrity': 0.6,
-            'growth_mindset': 0.7,
-            'wisdom': 0.6,
-            'transcendence': 0.5,
-            'reasoning': 'Fallback: detected growth-oriented content'
-        }
+    # ✅ ENHANCED Thai keywords
+    if lang == 'th':
+        growth_keywords = [
+            'รัก', 'ขอบคุณ', 'กตัญญู', 'เรียนรู้', 'พัฒนา', 'เติบโต',
+            'พระพุทธเจ้า', 'พระ', 'พระเจ้า', 'อัลลอฮ์', 'ธรรม', 'บูชา', 
+            'สวดมนต์', 'ทำบุญ', 'ไหว้พระ', 'ศรัทธา', 'เชื่อ',
+            'ธรรมชาติ', 'ต้นไม้', 'ภูเขา', 'ทะเล', 'สวยงาม', 'งดงาม',
+            'ซาบซึ้ง', 'ดีงาม', 'ใจดี', 'เมตตา', 'กรุณา', 'เห็นอกเห็นใจ',
+            'ช่วยเหลือ', 'แบ่งปัน', 'ให้', 'ดี', 'สุข', 'สันติ', 'สงบ'
+        ]
+        
+        challenge_keywords = [
+            'ฆ่า', 'ทำร้าย', 'โกรธ', 'เกลียด', 'ชัง', 'ทำลาย', 'ร้าย',
+            'แก้แค้น', 'รุนแรง', 'ต่อสู้', 'ทะเลาะ', 'โกง', 'หลอกลวง',
+            'เจ็บปวด', 'ทุกข์', 'เศร้า', 'โดดเดี่ยว'
+        ]
+        
+        wisdom_keywords = [
+            'ปัญญา', 'สติ', 'สมาธิ', 'ตรัสรู้', 'รู้แจ้ง', 'เห็นแจ้ง',
+            'ไตร่ตรอง', 'คิด', 'ปรัชญา', 'ธรรมะ', 'วิปัสสนา',
+            'เข้าใจ', 'รู้', 'ตระหนัก', 'หยั่งรู้'
+        ]
+        
+        support_keywords = [
+            'ฆ่าตัวตาย', 'ตาย', 'สิ้นหวัง', 'ไม่มีความหมาย', 'ไร้ค่า',
+            'ทำไม่ได้', 'ยอมแพ้', 'จบชีวิต', 'ช่วยด้วย', 'วิกฤต'
+        ]
+        
+        # Check keywords with logging
+        for keyword in growth_keywords:
+            if keyword in text:
+                logger.info(f"✅ Thai growth keyword found: {keyword}")
+                return {
+                    'classification': 'growth_memory',
+                    'self_awareness': 0.7,
+                    'emotional_regulation': 0.6,
+                    'compassion': 0.7,
+                    'integrity': 0.6,
+                    'growth_mindset': 0.7,
+                    'wisdom': 0.6,
+                    'transcendence': 0.6,
+                    'reasoning': f'Thai growth keyword detected: {keyword}'
+                }
+        
+        for keyword in support_keywords:
+            if keyword in text:
+                logger.info(f"⚠️ Thai support keyword found: {keyword}")
+                return {
+                    'classification': 'needs_support',
+                    'self_awareness': 0.3,
+                    'emotional_regulation': 0.2,
+                    'compassion': 0.4,
+                    'integrity': 0.4,
+                    'growth_mindset': 0.3,
+                    'wisdom': 0.3,
+                    'transcendence': 0.2,
+                    'reasoning': f'Thai support keyword detected: {keyword}'
+                }
+        
+        for keyword in challenge_keywords:
+            if keyword in text:
+                logger.info(f"⚠️ Thai challenge keyword found: {keyword}")
+                return {
+                    'classification': 'challenge_memory',
+                    'self_awareness': 0.3,
+                    'emotional_regulation': 0.2,
+                    'compassion': 0.4,
+                    'integrity': 0.4,
+                    'growth_mindset': 0.3,
+                    'wisdom': 0.3,
+                    'transcendence': 0.2,
+                    'reasoning': f'Thai challenge keyword detected: {keyword}'
+                }
+        
+        for keyword in wisdom_keywords:
+            if keyword in text:
+                logger.info(f"✅ Thai wisdom keyword found: {keyword}")
+                return {
+                    'classification': 'wisdom_moment',
+                    'self_awareness': 0.7,
+                    'emotional_regulation': 0.7,
+                    'compassion': 0.7,
+                    'integrity': 0.7,
+                    'growth_mindset': 0.7,
+                    'wisdom': 0.8,
+                    'transcendence': 0.7,
+                    'reasoning': f'Thai wisdom keyword detected: {keyword}'
+                }
+    
+    # English and other languages
+    else:
+        growth_keywords = ['love', 'thank', 'grateful', 'learn', 'improve', 'grow', 'appreciate', 
+                          'god', 'buddha', 'jesus', 'allah', 'prayer', 'worship', 'faith',
+                          'nature', 'beautiful', 'tree', 'mountain', 'sea', 'kind', 'help', 'compassion']
+        
+        challenge_keywords = ['kill', 'murder', 'hurt', 'harm', 'attack', 'hate', 'destroy', 
+                             'revenge', 'violent', 'angry', 'rage', 'fight']
+        
+        wisdom_keywords = ['wisdom', 'insight', 'enlightenment', 'meditation', 'contemplation', 
+                          'reflection', 'philosophy', 'truth', 'understanding', 'awareness']
+        
+        support_keywords = ['suicide', 'die', 'hopeless', 'worthless', 'end it', 'kill myself',
+                           'no meaning', 'give up', 'help me', 'crisis']
+        
+        if any(keyword in text_lower for keyword in growth_keywords):
+            logger.info(f"✅ English growth keyword found")
+            return {
+                'classification': 'growth_memory',
+                'self_awareness': 0.7,
+                'emotional_regulation': 0.6,
+                'compassion': 0.7,
+                'integrity': 0.6,
+                'growth_mindset': 0.7,
+                'wisdom': 0.6,
+                'transcendence': 0.6,
+                'reasoning': f'Growth keyword detected in {lang}'
+            }
+        
+        if any(keyword in text_lower for keyword in support_keywords):
+            return {
+                'classification': 'needs_support',
+                'self_awareness': 0.3,
+                'emotional_regulation': 0.2,
+                'compassion': 0.4,
+                'integrity': 0.4,
+                'growth_mindset': 0.3,
+                'wisdom': 0.3,
+                'transcendence': 0.2,
+                'reasoning': f'Support keyword detected in {lang}'
+            }
+        
+        if any(keyword in text_lower for keyword in challenge_keywords):
+            return {
+                'classification': 'challenge_memory',
+                'self_awareness': 0.3,
+                'emotional_regulation': 0.2,
+                'compassion': 0.4,
+                'integrity': 0.4,
+                'growth_mindset': 0.3,
+                'wisdom': 0.3,
+                'transcendence': 0.2,
+                'reasoning': f'Challenge keyword detected in {lang}'
+            }
+        
+        if any(keyword in text_lower for keyword in wisdom_keywords):
+            return {
+                'classification': 'wisdom_moment',
+                'self_awareness': 0.7,
+                'emotional_regulation': 0.7,
+                'compassion': 0.7,
+                'integrity': 0.7,
+                'growth_mindset': 0.7,
+                'wisdom': 0.8,
+                'transcendence': 0.7,
+                'reasoning': f'Wisdom keyword detected in {lang}'
+            }
     
     # Default neutral
+    logger.info(f"ℹ️ No keywords matched, defaulting to neutral")
     return {
         'classification': 'neutral_interaction',
         'self_awareness': 0.5,
@@ -190,7 +338,7 @@ def get_fallback_classification(text: str) -> Dict:
         'growth_mindset': 0.5,
         'wisdom': 0.5,
         'transcendence': 0.3,
-        'reasoning': 'Fallback: neutral classification'
+        'reasoning': f'Fallback: Neutral classification for {lang}'
     }
 
 # ============================================================
@@ -231,20 +379,27 @@ async def generate_embedding(text: str) -> Optional[List[float]]:
 # ============================================================
 
 def detect_language(text: str) -> str:
-    """Simple language detection based on character sets"""
+    """Enhanced language detection"""
+    # Thai
     if re.search(r'[\u0E00-\u0E7F]', text):
         return 'th'
+    # Chinese
     elif re.search(r'[\u4E00-\u9FFF]', text):
         return 'zh'
+    # Japanese
     elif re.search(r'[\u3040-\u309F\u30A0-\u30FF]', text):
         return 'ja'
+    # Korean
     elif re.search(r'[\uAC00-\uD7AF]', text):
         return 'ko'
+    # Arabic
+    elif re.search(r'[\u0600-\u06FF]', text):
+        return 'ar'
     else:
         return 'en'
 
 def detect_moments(ethical_scores: Dict, classification: str) -> List[Dict]:
-    """Detect significant moments based on scores and classification"""
+    """Detect significant moments"""
     moments = []
     
     if ethical_scores.get('self_awareness', 0) > 0.7:
@@ -283,7 +438,7 @@ def detect_moments(ethical_scores: Dict, classification: str) -> List[Dict]:
     return moments
 
 def determine_growth_stage(ethical_scores: Dict[str, float]) -> int:
-    """Determine growth stage from ethical scores"""
+    """Determine growth stage"""
     avg_score = sum(ethical_scores.values()) / len(ethical_scores)
     
     if avg_score < 0.3:
@@ -345,7 +500,7 @@ async def save_memory_with_embedding(
     growth_stage: int,
     db_conn
 ) -> str:
-    """Save to memory_embeddings with vector and metadata"""
+    """Save to memory_embeddings"""
     cursor = db_conn.cursor()
     
     vector_str = f"[{','.join(map(str, embedding))}]"
@@ -388,7 +543,7 @@ def save_interaction_memory(
     memory_embedding_id: str,
     db_conn
 ):
-    """Save to interaction_memories with link to memory_embeddings"""
+    """Save to interaction_memories"""
     cursor = db_conn.cursor()
     
     cursor.execute("""
@@ -414,40 +569,6 @@ def save_interaction_memory(
     db_conn.commit()
     cursor.close()
     logger.info(f"✅ Interaction memory saved")
-
-def get_user_ethical_history(user_id: str, db_conn) -> Dict:
-    cursor = db_conn.cursor(cursor_factory=RealDictCursor)
-    
-    cursor.execute("""
-        SELECT * FROM user_data_schema.ethical_profiles
-        WHERE user_id = %s
-    """, (user_id,))
-    
-    profile = cursor.fetchone()
-    cursor.close()
-    
-    if profile:
-        return {
-            'baseline_self_awareness': profile['self_awareness'],
-            'baseline_regulation': profile['emotional_regulation'],
-            'baseline_compassion': profile['compassion'],
-            'baseline_integrity': profile['integrity'],
-            'baseline_growth': profile['growth_mindset'],
-            'baseline_wisdom': profile['wisdom'],
-            'baseline_transcendence': profile['transcendence'],
-            'current_stage': profile['growth_stage']
-        }
-    
-    return {
-        'baseline_self_awareness': 0.3,
-        'baseline_regulation': 0.4,
-        'baseline_compassion': 0.4,
-        'baseline_integrity': 0.5,
-        'baseline_growth': 0.4,
-        'baseline_wisdom': 0.3,
-        'baseline_transcendence': 0.2,
-        'current_stage': 2
-    }
 
 # ============================================================
 # GUIDANCE TEMPLATES
@@ -517,12 +638,12 @@ class GatingResponse(BaseModel):
     memory_id: Optional[str] = None
 
 # ============================================================
-# MAIN ENDPOINT - LLM CLASSIFICATION
+# MAIN ENDPOINT
 # ============================================================
 
 @app.post("/gating/ethical-route", response_model=GatingResponse)
 async def ethical_routing(request: GatingRequest):
-    """Process text through ethical growth framework with LLM classification"""
+    """Process text with improved Thai support"""
     
     logger.info(f"📝 Processing text for user {request.user_id}: {request.text[:50]}...")
     
@@ -541,10 +662,10 @@ async def ethical_routing(request: GatingRequest):
         embedding = await generate_embedding(request.text)
         
         if not embedding:
-            logger.warning("⚠️  Embedding generation failed")
+            logger.warning("⚠️ Embedding generation failed")
         
-        # 3. ✅ LLM CLASSIFICATION (NEW!)
-        logger.info(f"🤖 Using LLM for classification...")
+        # 3. LLM CLASSIFICATION with fallback
+        logger.info(f"🤖 Using LLM for classification (language: {lang})...")
         llm_result = await classify_with_llm(request.text, lang)
         
         classification = llm_result['classification']
@@ -558,7 +679,7 @@ async def ethical_routing(request: GatingRequest):
             'transcendence': llm_result['transcendence'],
         }
         
-        logger.info(f"✅ LLM Classification: {classification}")
+        logger.info(f"✅ Classification: {classification}")
         logger.info(f"📊 Reasoning: {llm_result.get('reasoning', 'N/A')}")
         
         # 4. Determine growth stage
@@ -636,7 +757,8 @@ async def health():
     return {
         "status": "healthy", 
         "service": "ethical_growth_gating",
-        "version": "3.0-llm",
+        "version": "4.0-improved-thai",
+        "supported_languages": ["en", "th", "zh", "ja", "ko", "ar", "and more"],
         "multilingual": True,
         "embedding_model": EMBEDDING_MODEL,
         "classification_model": LLM_MODEL,
