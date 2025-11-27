@@ -29,7 +29,7 @@ app = FastAPI(title="Ethical Growth Gating Service")
 
 OLLAMA_URL = os.getenv("OLLAMA_EXTERNAL_URL", "http://ollama.ollama.svc.cluster.local:11434")
 EMBEDDING_MODEL = "nomic-embed-text"  # 768 dimensions
-LLM_MODEL = "tinyllama"  # For classification
+LLM_MODEL = "qwen2.5:1.5b"  # For classification
 
 # ============================================================
 # IMPROVED MULTILINGUAL CLASSIFICATION
